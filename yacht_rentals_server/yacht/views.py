@@ -2,12 +2,13 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.request import Request
 from django.contrib.auth import authenticate
-import jwt, time
+import jwt, time, datetime
 from .config import JWT_SECRET, TIME_EXPIRE
-from .models import UserInfo, Yacht
+from .models import UserInfo, Yacht, UserRole, RequestStatus
 from django.contrib.auth.models import User
+from .models import Request as YachtRequest
 
-#eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwidGltZSI6MTcxNDY0Njc0MX0.sUueaPC7iAN6DdI-mksNcTBy8lV0mRUP80a_1hAJdMo
+
 def check_token(params):
     if 'token' in params:
         try:
@@ -25,8 +26,99 @@ def check_token(params):
         raise Exception("Token required")
 
 
-class GetAvailableYachts(APIView):
+class CreateYachtRequest(APIView):
+    def post(self, request: Request):
+        try:
+            username = check_token(request.query_params)
 
+        except Exception as ex:
+            return Response({'error': str(ex)}, 401)
+        
+        user = User.objects.filter(username=username)
+        user_info = UserInfo.objects.filter(user=user[0])[0]
+
+        params = ('yacht', 'from_time', 'to_time')
+        no_params = []
+
+        for param in params:
+            if param not in request.data:
+                no_params.append(param)
+
+        if len(no_params) > 0:                
+            return Response({'msg':'Missing parameters: ' + ', '.join(no_params)}, 400)
+        
+        yachts = Yacht.objects.filter(id=request.data['yacht'])
+
+        if len(yachts) == 0:
+            return Response({'msg':'Yacht not found'}, 400)
+        
+        yacht = yachts[0]
+
+        if not yacht.available:
+            return Response({'msg':'Yacht is busy'}, 400)
+
+        try:
+            from_time = int(request.data['from_time'])
+            to_time = int(request.data['to_time'])
+
+        except:
+            return Response({'msg':'Wrong time format'}, 400)
+        
+        time_in_days = (to_time - from_time) / 60 / 60 / 24
+        price_sum = yacht.rent_price * time_in_days
+
+        if price_sum < 0 or price_sum > user_info.balance:
+            return Response({'msg':'The balance is insufficient'}, 400)
+        
+        # yacht.available = False
+        # yacht.save()
+
+        from_time = datetime.datetime.fromtimestamp(from_time)
+        to_time = datetime.datetime.fromtimestamp(to_time)
+
+        YachtRequest(
+            yacht=yacht,
+            user=user_info,
+            time_req=datetime.datetime.now(),
+            from_time=from_time,
+            to_time=to_time,
+            get=True
+        ).save()
+
+        return Response({'msg':'ok'})
+    
+
+class DenyRequest(APIView):
+    def get(self, request: Request):
+        try:
+            username = check_token(request.query_params)
+
+        except Exception as ex:
+            return Response({'error': str(ex)}, 401)
+        
+        user = User.objects.filter(username=username)
+        user_info = UserInfo.objects.filter(user=user[0])[0]
+
+        user_role = UserRole(user_info.user_role)
+        if user_role != UserRole.clerk:
+            return Response({'msg':'Access is denied'}, 401)
+        
+        if 'request_id' not in request.query_params:
+            return Response({'msg':'Missing parameters: request_id'}, 400)
+        
+        reqs = YachtRequest.objects.filter(id=request.query_params['request_id'])
+
+        if len(reqs) == 0:
+            return Response({'msg':'Request not found'}, 400)
+
+        req = reqs[0]
+        req.status = RequestStatus.deny.value
+        req.save()
+
+        return Response({'msg':'ok'})
+
+
+class GetAvailableYachts(APIView):
     def get(self, request: Request):
         try:
             check_token(request.query_params)
