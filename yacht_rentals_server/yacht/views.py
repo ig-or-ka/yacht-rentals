@@ -89,7 +89,7 @@ class CreateYachtRequest(APIView):
     
 
 class DenyRequest(APIView):
-    def get(self, request: Request):
+    def post(self, request: Request):
         try:
             username = check_token(request.query_params)
 
@@ -103,19 +103,58 @@ class DenyRequest(APIView):
         if user_role != UserRole.clerk:
             return Response({'msg':'Access is denied'}, 401)
         
-        if 'request_id' not in request.query_params:
+        if 'request_id' not in request.data:
             return Response({'msg':'Missing parameters: request_id'}, 400)
         
-        reqs = YachtRequest.objects.filter(id=request.query_params['request_id'])
+        reqs = YachtRequest.objects.filter(id=request.data['request_id'])
 
         if len(reqs) == 0:
             return Response({'msg':'Request not found'}, 400)
 
         req = reqs[0]
+        if RequestStatus(req.status) != RequestStatus.new:
+            return Response({'msg':'Request status not "new"'})
+
         req.status = RequestStatus.deny.value
+
+        if 'answer' in request.data:
+            req.answer = request.data['answer']
+
         req.save()
 
         return Response({'msg':'ok'})
+    
+
+class GetUserRequest(APIView):
+    def get(self, request: Request):
+        try:
+            username = check_token(request.query_params)
+
+        except Exception as ex:
+            return Response({'error': str(ex)}, 401)
+        
+        user = User.objects.filter(username=username)
+        user_info = UserInfo.objects.filter(user=user[0])[0]
+
+        reqs = YachtRequest.objects.filter(user=user_info)
+        reqs_res = []
+
+        for req in reqs:
+            reqs_res.append({
+                'status':req.status,
+                'yacht':{
+                    'id':req.yacht.id,
+                    'name':req.yacht.name,
+                    'price':req.yacht.rent_price
+                },
+                'time_req':req.time_req,
+                'get':req.get,
+                'from_time':req.from_time,
+                'to_time':req.to_time,
+                'answer':req.answer
+            })
+
+        return Response({'requests':reqs_res})
 
 
 class GetAvailableYachts(APIView):

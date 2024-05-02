@@ -35,3 +35,4 @@ class Request(models.Model):
     get = models.BooleanField()
     from_time = models.TimeField()
     to_time = models.TimeField()
+    answer = models.TextField(default="")
