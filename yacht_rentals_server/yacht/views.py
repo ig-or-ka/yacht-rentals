@@ -165,11 +165,20 @@ class GetUserRequest(APIView):
         user = User.objects.filter(username=username)
         user_info = UserInfo.objects.filter(user=user[0])[0]
 
-        reqs = YachtRequest.objects.filter(user=user_info)
+        if 'all' in request.query_params:
+            if UserRole(user_info.user_role) != UserRole.clerk:
+                return Response({'error': 'Access is denied'}, 400)
+            
+            reqs = YachtRequest.objects.all()
+
+        else:
+            reqs = YachtRequest.objects.filter(user=user_info)
+
         reqs_res = []
 
         for req in reqs:
             reqs_res.append({
+                'id':req.id,
                 'status':req.status,
                 'yacht':{
                     'id':req.yacht.id,
@@ -180,7 +189,8 @@ class GetUserRequest(APIView):
                 'get':req.get,
                 'from_time':req.from_time,
                 'to_time':req.to_time,
-                'answer':req.answer
+                'answer':req.answer,
+                'user':req.user.user.username
             })
 
         return Response({'requests':reqs_res})
@@ -334,4 +344,37 @@ class Login(APIView):
 
         token = jwt.encode(payload=json_data, key=JWT_SECRET, algorithm="HS256")
 
+        return Response({'access_token':token})
+    
+
+class Signup(APIView):
+    def post(self, request: Request):
+        params = ('username','password')
+        no_params = []
+
+        for param in params:
+            if param not in request.data:
+                no_params.append(param)
+
+        if len(no_params) > 0:                
+            return Response({'msg':'Missing parameters: ' + ', '.join(no_params)}, 400)
+        
+        usrs = User.objects.filter(username=request.data['username'])
+
+        if len(usrs) > 0:
+            return Response({'msg':'User already exists'}, 400)
+        
+        user_obj = User.objects.create_user(
+            request.data['username'], 
+            password=request.data['password']
+        )
+
+        UserInfo(user=user_obj).save()
+        
+        json_data = {
+            'username': request.data['username'],
+            'time': int(time.time())
+        }
+
+        token = jwt.encode(payload=json_data, key=JWT_SECRET, algorithm="HS256")
         return Response({'access_token':token})

@@ -11,4 +11,5 @@ urlpatterns = [
     path('create_back_request', CreateBackRequest.as_view()),
     path('create_yacht_request', CreateYachtRequest.as_view()),
     path('login', Login.as_view()),
+    path('signup', Signup.as_view()),
 ]
