@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.request import Request
 from django.contrib.auth import authenticate
-import jwt, time, datetime
+import jwt, time
 from .config import JWT_SECRET, TIME_EXPIRE
 from .models import UserInfo, Yacht, UserRole, RequestStatus
 from django.contrib.auth.models import User
@@ -47,6 +47,9 @@ class CreateYachtRequest(APIView):
         if len(no_params) > 0:                
             return Response({'msg':'Missing parameters: ' + ', '.join(no_params)}, 400)
         
+        if user_info.current_yacht is not None:
+            return Response({'msg':'A yacht is already assigned to you'}, 400)
+        
         yachts = Yacht.objects.filter(id=request.data['yacht'])
 
         if len(yachts) == 0:
@@ -70,16 +73,10 @@ class CreateYachtRequest(APIView):
         if price_sum < 0 or price_sum > user_info.balance:
             return Response({'msg':'The balance is insufficient'}, 400)
         
-        # yacht.available = False
-        # yacht.save()
-
-        from_time = datetime.datetime.fromtimestamp(from_time)
-        to_time = datetime.datetime.fromtimestamp(to_time)
-
         YachtRequest(
             yacht=yacht,
             user=user_info,
-            time_req=datetime.datetime.now(),
+            time_req=time.time(),
             from_time=from_time,
             to_time=to_time,
             get=True
@@ -88,8 +85,8 @@ class CreateYachtRequest(APIView):
         return Response({'msg':'ok'})
     
 
-class DenyRequest(APIView):
-    def post(self, request: Request):
+class CreateBackRequest(APIView):
+    def get(self, request: Request):
         try:
             username = check_token(request.query_params)
 
@@ -99,21 +96,53 @@ class DenyRequest(APIView):
         user = User.objects.filter(username=username)
         user_info = UserInfo.objects.filter(user=user[0])[0]
 
-        user_role = UserRole(user_info.user_role)
-        if user_role != UserRole.clerk:
-            return Response({'msg':'Access is denied'}, 401)
+        if user_info.current_yacht is None:
+            return Response({'msg':'No current yacht'}, 400)
         
-        if 'request_id' not in request.data:
-            return Response({'msg':'Missing parameters: request_id'}, 400)
-        
-        reqs = YachtRequest.objects.filter(id=request.data['request_id'])
+        YachtRequest(
+            yacht=user_info.current_yacht,
+            user=user_info,
+            time_req=time.time(),
+            from_time=0,
+            to_time=0,
+            get=False
+        ).save()
 
-        if len(reqs) == 0:
-            return Response({'msg':'Request not found'}, 400)
+        return Response({'msg':'ok'})
 
-        req = reqs[0]
-        if RequestStatus(req.status) != RequestStatus.new:
-            return Response({'msg':'Request status not "new"'})
+
+def check_request_params(query_params, request_data):
+    username = check_token(query_params)
+    
+    user = User.objects.filter(username=username)
+    user_info = UserInfo.objects.filter(user=user[0])[0]
+
+    user_role = UserRole(user_info.user_role)
+    if user_role != UserRole.clerk:
+        raise Exception("Access is denied")
+    
+    if 'request_id' not in request_data:
+        raise Exception("Missing parameters: request_id")
+    
+    reqs = YachtRequest.objects.filter(id=request_data['request_id'])
+
+    if len(reqs) == 0:
+        raise Exception("Request not found")
+
+    req = reqs[0]
+    if RequestStatus(req.status) != RequestStatus.new:
+        raise Exception('Request status not "new"')
+    
+    return req
+
+
+class DenyRequest(APIView):
+    def post(self, request: Request):
+        try:
+            req = check_request_params(request.query_params, request.data)
+
+        except Exception as ex:
+            return Response({'error': str(ex)}, 400)
 
         req.status = RequestStatus.deny.value
 
@@ -155,6 +184,53 @@ class GetUserRequest(APIView):
             })
 
         return Response({'requests':reqs_res})
+    
+
+class AllowRequest(APIView):
+    def post(self, request: Request):
+        try:
+            req = check_request_params(request.query_params, request.data)
+
+        except Exception as ex:
+            return Response({'error': str(ex)}, 400)
+        
+        yacht = req.yacht
+        user_req = req.user
+        
+        if req.get:
+            time_in_days = (req.to_time - req.from_time) / 60 / 60 / 24
+            price_sum = req.yacht.rent_price * time_in_days
+
+            if price_sum < 0 or price_sum > req.user.balance:
+                return Response({'msg':'The balance is insufficient'}, 400)
+            
+            if not req.yacht.available:
+                return Response({'msg':'Yacht is busy'}, 400)
+
+            user_req.current_yacht = yacht
+            user_req.balance -= price_sum
+            user_req.save()
+
+            yacht.available = False
+            yacht.save()
+
+        else:
+            if user_req.current_yacht is None or user_req.current_yacht.id != yacht.id:
+                return Response({'msg':'The current yacht differs from the one specified in the request'}, 400)
+
+            user_req.current_yacht = None
+            user_req.save()
+
+            yacht.available = True
+            yacht.save()
+
+        req.status = RequestStatus.allow.value
+        if 'answer' in request.data['answer']:
+            req.answer = request.data['answer']
+
+        req.save()
+
+        return Response({'msg':'ok'})
 
 
 class GetAvailableYachts(APIView):
