@@ -38,7 +38,7 @@ class RequestViewer:
             resp['requests'].sort(key=lambda x: x['id'], reverse=True)
             return resp['requests']
         
-        QMessageBox.about(self, "Error", resp['error'])
+        QMessageBox.about(self.ui, "Error", resp['error'])
         return []
     
 

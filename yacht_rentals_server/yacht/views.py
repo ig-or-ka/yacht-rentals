@@ -45,33 +45,33 @@ class CreateYachtRequest(APIView):
                 no_params.append(param)
 
         if len(no_params) > 0:                
-            return Response({'msg':'Missing parameters: ' + ', '.join(no_params)}, 400)
+            return Response({'error':'Missing parameters: ' + ', '.join(no_params)}, 400)
         
         if user_info.current_yacht is not None:
-            return Response({'msg':'A yacht is already assigned to you'}, 400)
+            return Response({'error':'A yacht is already assigned to you'}, 400)
         
         yachts = Yacht.objects.filter(id=request.data['yacht'])
 
         if len(yachts) == 0:
-            return Response({'msg':'Yacht not found'}, 400)
+            return Response({'error':'Yacht not found'}, 400)
         
         yacht = yachts[0]
 
         if not yacht.available:
-            return Response({'msg':'Yacht is busy'}, 400)
+            return Response({'error':'Yacht is busy'}, 400)
 
         try:
             from_time = int(request.data['from_time'])
             to_time = int(request.data['to_time'])
 
         except:
-            return Response({'msg':'Wrong time format'}, 400)
+            return Response({'error':'Wrong time format'}, 400)
         
         time_in_days = (to_time - from_time) / 60 / 60 / 24
         price_sum = yacht.rent_price * time_in_days
 
         if price_sum < 0 or price_sum > user_info.balance:
-            return Response({'msg':'The balance is insufficient'}, 400)
+            return Response({'error':'The balance is insufficient'}, 400)
         
         YachtRequest(
             yacht=yacht,
@@ -97,7 +97,7 @@ class CreateBackRequest(APIView):
         user_info = UserInfo.objects.filter(user=user[0])[0]
 
         if user_info.current_yacht is None:
-            return Response({'msg':'No current yacht'}, 400)
+            return Response({'error':'No current yacht'}, 400)
         
         YachtRequest(
             yacht=user_info.current_yacht,
@@ -306,7 +306,10 @@ class GetUserInfo(APIView):
 
         current_yacht = None
         if user_info.current_yacht:
-            current_yacht = user_info.current_yacht.id
+            current_yacht = {
+                'id':user_info.current_yacht.id,
+                'name':user_info.current_yacht.name
+            }
 
         return Response({
             'username':username,
