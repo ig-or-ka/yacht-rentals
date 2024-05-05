@@ -212,10 +212,10 @@ class AllowRequest(APIView):
             price_sum = req.yacht.rent_price * time_in_days
 
             if price_sum < 0 or price_sum > req.user.balance:
-                return Response({'msg':'The balance is insufficient'}, 400)
+                return Response({'error':'The balance is insufficient'}, 400)
             
             if not req.yacht.available:
-                return Response({'msg':'Yacht is busy'}, 400)
+                return Response({'error':'Yacht is busy'}, 400)
 
             user_req.current_yacht = yacht
             user_req.balance -= price_sum
@@ -226,7 +226,7 @@ class AllowRequest(APIView):
 
         else:
             if user_req.current_yacht is None or user_req.current_yacht.id != yacht.id:
-                return Response({'msg':'The current yacht differs from the one specified in the request'}, 400)
+                return Response({'error':'The current yacht differs from the one specified in the request'}, 400)
 
             user_req.current_yacht = None
             user_req.save()
@@ -335,7 +335,11 @@ class Login(APIView):
         check_user_info = UserInfo.objects.filter(user=user)
 
         if len(check_user_info) == 0:
-            UserInfo(user=user).save()
+            check_user_info = UserInfo(user=user)
+            check_user_info.save()
+
+        else:
+            check_user_info = check_user_info[0]
 
         json_data = {
             'username': request.data['username'],
@@ -344,7 +348,7 @@ class Login(APIView):
 
         token = jwt.encode(payload=json_data, key=JWT_SECRET, algorithm="HS256")
 
-        return Response({'access_token':token})
+        return Response({'access_token':token,'post':check_user_info.user_role})
     
 
 class Signup(APIView):
