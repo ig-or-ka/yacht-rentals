@@ -33,6 +33,9 @@ class RequestCreator:
 
 
     def create_yacht_request(self):
+        if QMessageBox.question(self.ui, "Подтверждение", "Вы уверены?") != QMessageBox.StandardButton.Yes:
+            return
+
         try:
             period = int(self.ui.periodEdit.text())
 
@@ -59,6 +62,9 @@ class RequestCreator:
 
 
     def create_return_request(self):
+        if QMessageBox.question(self.ui, "Подтверждение", "Вы уверены?") != QMessageBox.StandardButton.Yes:
+            return
+
         status, resp = yacht_api.api_method('create_back_request')
 
         if status == 200:

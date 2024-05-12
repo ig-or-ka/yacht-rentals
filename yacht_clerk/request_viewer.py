@@ -61,6 +61,9 @@ class RequestViewer:
             QMessageBox.about(self.ui, "Error", "Запрос не выбран!")
             return
         
+        if QMessageBox.question(self.ui, "Подтверждение", "Вы уверены?") != QMessageBox.StandardButton.Yes:
+            return
+        
         data = {
             'request_id':self.selectedReq,
             'answer':self.ui.answerEdit.text()
